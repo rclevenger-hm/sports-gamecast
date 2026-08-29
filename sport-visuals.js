@@ -49,12 +49,14 @@
   }
 
   function statusOf(summary, sbEvent) {
-    var comp = competition(summary, sbEvent);
-    return comp.status || get(sbEvent, ["status"], null) || {};
+    return get(sbEvent, ["competitions", 0, "status"], null) ||
+      get(sbEvent, ["status"], null) ||
+      get(summary, ["header", "competitions", 0, "status"], null) || {};
   }
 
   function teamPair(summary, sbEvent) {
     var comps = get(competition(summary, sbEvent), ["competitors"], []);
+    if (!comps.length) comps = get(summary, ["header", "competitions", 0, "competitors"], []);
     var away = comps.find(function (c) { return c.homeAway === "away"; }) || comps[1] || {};
     var home = comps.find(function (c) { return c.homeAway === "home"; }) || comps[0] || {};
     return { away: away, home: home };
