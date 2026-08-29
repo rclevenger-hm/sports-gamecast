@@ -365,80 +365,11 @@
     return model;
   }
 
-  function scoreboardDateFromISO(iso) {
-    var d = new Date(iso);
-    if (isNaN(d)) return null;
-    d = new Date(d.getTime() - 6 * 3600 * 1000);
-    return d.getUTCFullYear() + String(d.getUTCMonth() + 1).padStart(2, "0") + String(d.getUTCDate()).padStart(2, "0");
-  }
-
-  function init() {
-    if (typeof document === "undefined" || typeof fetch === "undefined") return;
-    var qs = new URLSearchParams(location.search);
-    var sport = String(qs.get("sport") || "nfl").toLowerCase();
-    if (!SPORTS[sport]) return;
-    var eventId = qs.get("event");
-    if (!eventId) return;
-
-    var cfg = SPORTS[sport];
-    var api = "https://site.api.espn.com/apis/site/v2/sports/" + cfg.path;
-    var timer = null;
-    var lastSummary = null;
-    var lastEvent = null;
-
-    function fetchJSON(url) {
-      return fetch(url, { cache: "no-store" }).then(function (r) {
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        return r.json();
-      });
-    }
-
-    function load() {
-      return fetchJSON(api + "/summary?event=" + encodeURIComponent(eventId)).then(function (summary) {
-        var iso = get(summary, ["header", "competitions", 0, "date"], null);
-        var date = qs.get("date") || scoreboardDateFromISO(iso);
-        var sbUrl = api + "/scoreboard" + (date ? "?dates=" + encodeURIComponent(date) : "");
-        return fetchJSON(sbUrl).catch(function () { return null; }).then(function (sb) {
-          var ev = sb && Array.isArray(sb.events) ? sb.events.find(function (item) { return String(item.id) === String(eventId); }) : null;
-          lastSummary = summary;
-          lastEvent = ev;
-          var model = renderForSport(sport, summary, ev, document);
-          var state = model ? model.state : "pre";
-          clearTimeout(timer);
-          timer = setTimeout(load, state === "in" ? 10000 : (state === "pre" ? 30000 : 120000));
-        });
-      }).catch(function () {
-        clearTimeout(timer);
-        timer = setTimeout(load, 30000);
-      });
-    }
-
-    var situation = document.getElementById("situationBox");
-    if (situation && typeof MutationObserver !== "undefined") {
-      var observer = new MutationObserver(function () {
-        if (lastSummary && situation.classList.contains("hidden")) {
-          renderForSport(sport, lastSummary, lastEvent, document);
-        }
-      });
-      observer.observe(situation, { attributes: true, attributeFilter: ["class"] });
-    }
-
-    document.addEventListener("visibilitychange", function () {
-      if (document.hidden) clearTimeout(timer);
-      else load();
-    });
-
-    load();
-  }
-
   root.SportVisuals = {
     buildModel: buildModel,
     baseballModel: baseballModel,
     hockeyModel: hockeyModel,
     soccerModel: soccerModel,
-    renderForSport: renderForSport,
-    scoreboardDateFromISO: scoreboardDateFromISO
+    renderForSport: renderForSport
   };
-
-  if (typeof document !== "undefined") init();
 })(typeof globalThis !== "undefined" ? globalThis : this);

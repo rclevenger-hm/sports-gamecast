@@ -300,6 +300,7 @@
   </div>
 </div>
 
+<script src="sport-visuals.js"></script>
 <script>
 (function () {
   "use strict";
@@ -718,6 +719,9 @@
         renderPicker(sb);
       }
       renderSituation(sbEvent, summary, away, home);   // sets possession flags
+      if (sport !== "nfl" && window.SportVisuals) {
+        window.SportVisuals.renderForSport(sport, summary, sbEvent, document);
+      }
       renderTeam($("teamAway"), away, home.score, state === "post");
       renderTeam($("teamHome"), home, away.score, state === "post");
       renderLinescore(away, home, state);
