@@ -3,6 +3,8 @@ name: Test & Deploy to GitHub Pages
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -11,12 +13,12 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   test:
-    name: Smoke tests (Playwright, mocked ESPN API)
+    name: Tests (broadcast data + Playwright smoke)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,12 +31,13 @@ jobs:
       - name: Install Chromium
         working-directory: test
         run: npx playwright install chromium --with-deps
-      - name: Run smoke tests
+      - name: Run tests
         working-directory: test
-        run: node smoke.mjs
+        run: npm test
 
   deploy:
     name: Deploy to GitHub Pages
+    if: github.event_name != 'pull_request'
     needs: test
     runs-on: ubuntu-latest
     environment:
@@ -47,6 +50,7 @@ jobs:
         run: |
           mkdir -p _site
           cp index.html gamecast.html ticker.html gamebar.html _site/
+          cp -R data _site/data
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site

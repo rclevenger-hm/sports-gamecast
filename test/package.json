@@ -1,9 +1,9 @@
 {
-  "name": "nfl-gamecast-tests",
+  "name": "sports-gamecast-tests",
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node smoke.mjs"
+    "test": "node validate_broadcasts.mjs && node smoke.mjs"
   },
   "dependencies": {
     "@playwright/test": "^1.49.0"
