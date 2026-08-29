@@ -49,8 +49,9 @@ jobs:
       - name: Stage site files
         run: |
           mkdir -p _site
-          cp index.html gamecast.html ticker.html gamebar.html favorites.js _site/
+          cp index.html gamecast.html ticker.html gamebar.html favorites.js sport-visuals.js _site/
           cp -R data _site/data
+          sed -i 's#</body>#  <script src="sport-visuals.js"></script>\n</body>#' _site/gamecast.html
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
