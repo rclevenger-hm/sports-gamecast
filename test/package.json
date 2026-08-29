@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node validate_broadcasts.mjs && node validate_favorites.mjs && node smoke.mjs"
+    "test": "node validate_broadcasts.mjs && node validate_favorites.mjs && node smoke.mjs && node sport_visuals.mjs"
   },
   "dependencies": {
     "@playwright/test": "^1.49.0"
