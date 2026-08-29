@@ -71,6 +71,10 @@
     return get(value, ["athlete", "displayName"], get(value, ["displayName"], get(value, ["fullName"], "")));
   }
 
+  function personName(value) {
+    return athleteName(value) || get(value, ["athlete", "shortName"], get(value, ["shortName"], ""));
+  }
+
   function occupied(value) {
     if (value == null || value === false || value === 0 || value === "0") return false;
     return true;
@@ -125,6 +129,16 @@
     var onThird = sit.onThird != null ? sit.onThird : get(last, ["runners", "third"], null);
     var batter = athleteName(sit.batter || get(last, ["batter"], null));
     var pitcher = athleteName(sit.pitcher || get(last, ["pitcher"], null));
+    var onDeck = personName(sit.onDeck || get(last, ["onDeck"], null));
+    var pitcherPitches = asNumber(get(sit, ["pitcher", "pitchCount"], get(sit, ["pitcher", "pitches"], get(last, ["pitchCount"], null))), null);
+    var pitchType = get(last, ["pitchType", "text"], get(last, ["pitchType"], ""));
+    var pitchSpeed = get(last, ["pitchSpeed"], get(last, ["pitchVelocity"], ""));
+    var pitchDescription = [pitchType, pitchSpeed ? String(pitchSpeed) + " MPH" : ""].filter(Boolean).join(" ");
+    var runners = {
+      first: personName(onFirst),
+      second: personName(onSecond),
+      third: personName(onThird)
+    };
     var headline = [half, inning != null ? String(inning) : ""].filter(Boolean).join(" ") || detail || "Live inning";
     var countText = (balls != null && strikes != null) ? balls + "-" + strikes : "Count —";
     var outsText = outs != null ? outs + (outs === 1 ? " out" : " outs") : "Outs —";
@@ -140,6 +154,10 @@
       bases: { first: occupied(onFirst), second: occupied(onSecond), third: occupied(onThird) },
       batter: batter,
       pitcher: pitcher,
+      onDeck: onDeck,
+      pitcherPitches: pitcherPitches,
+      pitchDescription: pitchDescription,
+      runners: runners,
       state: stateOf(status)
     };
   }
@@ -215,6 +233,8 @@
       ".sv-b1{right:-9px;top:32px}.sv-b2{top:-9px;left:32px}.sv-b3{left:-9px;top:32px}",
       ".sv-homeplate{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);font-size:10px;color:#fff;font-weight:800}",
       ".sv-count{position:absolute;right:10px;top:10px;text-align:right;color:#fff;font-size:11px;line-height:1.5;text-shadow:0 1px 2px #000}",
+      ".sv-baseball-caption{position:absolute;left:12px;top:10px;right:88px;color:#fff;font-size:11px;line-height:1.35;text-shadow:0 1px 2px #000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+      ".sv-baserunners{position:absolute;left:12px;bottom:10px;color:rgba(255,255,255,.92);font-size:10px;line-height:1.35;text-shadow:0 1px 2px #000}",
       ".sv-hockey{height:138px;background:#eef6fa;color:#16212b;border-color:#b8c7d2}",
       ".sv-rink{position:absolute;inset:10px;border:2px solid #c9d4dc;border-radius:36px;background:rgba(255,255,255,.92);overflow:hidden}",
       ".sv-rink:before{content:'';position:absolute;left:50%;top:0;bottom:0;width:2px;background:#d34;transform:translateX(-50%)}",
@@ -259,7 +279,20 @@
       "<span class='sv-base sv-b2" + (model.bases.second ? " occupied" : "") + "'></span>" +
       "<span class='sv-base sv-b3" + (model.bases.third ? " occupied" : "") + "'></span></div>" +
       "<div class='sv-homeplate'>HOME</div>" +
+      (model.detail ? "<div class='sv-baseball-caption'><strong>Last pitch:</strong> " + esc(model.detail) + (model.pitchDescription ? " · " + esc(model.pitchDescription) : "") + "</div>" : "") +
+      "<div class='sv-baserunners'>" + esc(baseRunnerText(model)) + "</div>" +
       "<div class='sv-count'><strong>" + esc(model.headline) + "</strong><br>" + esc(model.countText) + "<br>" + esc(model.outsText) + "</div>";
+  }
+
+  function baseRunnerText(model) {
+    var bits = [];
+    var bases = [["1B", "first"], ["2B", "second"], ["3B", "third"]];
+    for (var i = 0; i < bases.length; i++) {
+      var label = bases[i][0];
+      var key = bases[i][1];
+      bits.push(label + ": " + (model.runners[key] || (model.bases[key] ? "Runner" : "Empty")));
+    }
+    return bits.join(" · ");
   }
 
   function renderHockey(model, host) {
@@ -290,6 +323,8 @@
     if (model.kind === "baseball") {
       if (model.batter) bits.push("<span class='sv-chip'><strong>At bat:</strong> " + esc(model.batter) + "</span>");
       if (model.pitcher) bits.push("<span class='sv-chip'><strong>Pitching:</strong> " + esc(model.pitcher) + "</span>");
+      if (model.pitcherPitches != null) bits.push("<span class='sv-chip'><strong>Pitches:</strong> " + esc(model.pitcherPitches) + "</span>");
+      if (model.onDeck) bits.push("<span class='sv-chip'><strong>On deck:</strong> " + esc(model.onDeck) + "</span>");
     } else if (model.kind === "hockey") {
       if (model.awayShots || model.homeShots) bits.push("<span class='sv-chip'><strong>Shots:</strong> " + esc(model.awayShots || "—") + "–" + esc(model.homeShots || "—") + "</span>");
     } else if (model.kind === "soccer") {
