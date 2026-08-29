@@ -36,7 +36,8 @@ const mlb = await page.evaluate(() => {
     onSecond: null,
     onThird: { athlete: { displayName: 'Runner Three' } },
     batter: { athlete: { displayName: 'Current Batter' } },
-    pitcher: { athlete: { displayName: 'Current Pitcher' } }
+    pitcher: { athlete: { displayName: 'Current Pitcher' }, pitchCount: 81 },
+    onDeck: { athlete: { displayName: 'Next Batter' } }
   } }] };
   const model = SportVisuals.renderForSport('mlb', summary, scoreboardEvent, document);
   return {
@@ -47,6 +48,7 @@ const mlb = await page.evaluate(() => {
     third: !!document.querySelector('.sv-b3.occupied'),
     headline: document.getElementById('downDistance').textContent,
     details: document.getElementById('lastPlay').textContent,
+    visualText: document.getElementById('sportVisualGfx').textContent,
     footballHidden: document.getElementById('fieldGfx').style.display === 'none'
   };
 });
@@ -54,6 +56,7 @@ assert('MLB uses baseball visual', mlb.kind === 'baseball' && mlb.className.incl
 assert('MLB base occupancy updates', mlb.first && !mlb.second && mlb.third, mlb);
 assert('MLB live inning renders', mlb.headline.includes('Top 7'), mlb.headline);
 assert('MLB count/player metadata renders', mlb.details.includes('Current Batter') && mlb.details.includes('Current Pitcher'), mlb.details);
+assert('MLB Gamecast details include pitch count, on-deck batter, and base runners', mlb.details.includes('81') && mlb.details.includes('Next Batter') && mlb.visualText.includes('1B: Runner One') && mlb.visualText.includes('3B: Runner Three'), mlb);
 assert('non-football visual hides football field without removing it', mlb.footballHidden);
 
 const nhl = await page.evaluate(() => {
