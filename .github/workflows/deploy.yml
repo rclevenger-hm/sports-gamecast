@@ -49,7 +49,7 @@ jobs:
       - name: Stage site files
         run: |
           mkdir -p _site
-          cp index.html gamecast.html ticker.html gamebar.html _site/
+          cp index.html gamecast.html ticker.html gamebar.html favorites.js _site/
           cp -R data _site/data
       - uses: actions/upload-pages-artifact@v3
         with:

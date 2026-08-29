@@ -102,13 +102,13 @@
     b.addEventListener("click", function () {
       var p = new URLSearchParams(location.search);
       if (k === "nfl") p.delete("sport"); else p.set("sport", k);
-      p.delete("date"); // slates differ per sport
+      p.delete("date");
       location.search = p.toString();
     });
     tabsEl.appendChild(b);
   });
 
-  var pickedDate = qs.get("date") || null;   // YYYYMMDD or null = current week
+  var pickedDate = qs.get("date") || null;
 
   function $(id) { return document.getElementById(id); }
   function esc(s) {
@@ -200,7 +200,6 @@
       board.innerHTML = "<div class='notice'>No games on this slate. Try another date.</div>";
       return false;
     }
-    // group by local day
     events.sort(function (a, b) { return new Date(a.date) - new Date(b.date); });
     var groups = {}, order = [];
     events.forEach(function (ev) {
@@ -249,7 +248,6 @@
     else refresh();
   });
 
-  // controls
   var dp = $("datePick");
   if (pickedDate && /^\d{8}$/.test(pickedDate)) {
     dp.value = pickedDate.slice(0, 4) + "-" + pickedDate.slice(4, 6) + "-" + pickedDate.slice(6, 8);
@@ -267,7 +265,6 @@
     location.search = p.toString();
   });
 
-  // day / night mode (remembered per browser)
   (function () {
     var mode = null;
     try { mode = localStorage.getItem("gc-theme"); } catch (e) {}
@@ -288,5 +285,6 @@
   refresh();
 })();
 </script>
+<script src="favorites.js"></script>
 </body>
 </html>
