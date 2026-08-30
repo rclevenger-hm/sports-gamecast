@@ -9,9 +9,7 @@
     try {
       var url = new URL(value, location.href);
       return url.protocol === "https:" ? url.href : null;
-    } catch (e) {
-      return null;
-    }
+    } catch (e) { return null; }
   }
 
   function injectStyles() {
@@ -174,9 +172,8 @@
       box.innerHTML = "";
       var head = make("div", "listen-live-head");
       head.appendChild(make("div", "listen-live-title", "Listen Live"));
-      host = box;
-      host.appendChild(head);
-      host.appendChild(make("div", "listen-live-empty", "Audio source data is temporarily unavailable. Gamecast is unaffected."));
+      box.appendChild(head);
+      box.appendChild(make("div", "listen-live-empty", "Audio source data is temporarily unavailable. Gamecast is unaffected."));
     }
   }
 
