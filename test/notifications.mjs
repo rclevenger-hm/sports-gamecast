@@ -9,6 +9,7 @@ game.status.type.shortDetail = 'Thu 7:00 PM';
 game.competitions[0].competitors.forEach(c => { c.score = '0'; });
 const scoreboard = JSON.stringify(raw);
 const indexPath = fileURLToPath(new URL('../index.html', import.meta.url));
+const favoriteCardSelector = 'a.card[href*="401873285"]';
 
 const failures = [];
 function assert(name, condition, extra) {
@@ -68,38 +69,39 @@ assert('renders notification preferences', panel.exists, panel);
 assert('restores enabled preference', panel.active === 'true', panel.active);
 assert('renders five configurable alert categories', panel.options === 5, panel.options);
 assert('baseline render does not notify', panel.initialNotifications === 0, panel.initialNotifications);
+assert('favorite fixture renders', await page.locator(favoriteCardSelector).count() === 1);
 
 // Simulate kickoff for the favorite team.
-await page.evaluate(() => {
-  const card = document.querySelector('a.card');
+await page.evaluate(selector => {
+  const card = document.querySelector(selector);
   card.querySelector('.game-status').innerHTML = '<span class="live"><span class="live-dot"></span>15:00 - 1st</span>';
-});
+}, favoriteCardSelector);
 await page.waitForTimeout(80);
 
 // Simulate a favorite-team score and lead change.
-await page.evaluate(() => {
-  const rows = document.querySelectorAll('a.card .row');
+await page.evaluate(selector => {
+  const rows = document.querySelector(selector).querySelectorAll('.row');
   rows[1].querySelector('.sc').textContent = '3';
-});
+}, favoriteCardSelector);
 await page.waitForTimeout(80);
 
 // Simulate a score that does not change the leader.
-await page.evaluate(() => {
-  const rows = document.querySelectorAll('a.card .row');
+await page.evaluate(selector => {
+  const rows = document.querySelector(selector).querySelectorAll('.row');
   rows[1].querySelector('.sc').textContent = '6';
-});
+}, favoriteCardSelector);
 await page.waitForTimeout(80);
 
 // Enter the late-game window.
-await page.evaluate(() => {
-  document.querySelector('a.card .game-status .live').textContent = '2:30 - 4th';
-});
+await page.evaluate(selector => {
+  document.querySelector(selector).querySelector('.game-status .live').textContent = '2:30 - 4th';
+}, favoriteCardSelector);
 await page.waitForTimeout(80);
 
 // Finish the game.
-await page.evaluate(() => {
-  document.querySelector('a.card .game-status').innerHTML = '<span class="final">Final</span>';
-});
+await page.evaluate(selector => {
+  document.querySelector(selector).querySelector('.game-status').innerHTML = '<span class="final">Final</span>';
+}, favoriteCardSelector);
 await page.waitForTimeout(80);
 
 const notifications = await page.evaluate(() => window.__notifications.slice());
