@@ -188,4 +188,10 @@
   });
   observer.observe(board, { childList: true, subtree: true });
   refreshFavoritesUI();
+
+  // Favorite-team alerts share this module's browser-local audience model.
+  var alerts = document.createElement("script");
+  alerts.src = "notifications.js";
+  alerts.defer = true;
+  document.body.appendChild(alerts);
 })();
