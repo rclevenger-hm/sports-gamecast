@@ -17,5 +17,9 @@ assert(favorites.includes('sports-gamecast-my-teams-filter'), "My Teams filter s
 assert(favorites.includes('MutationObserver'), "favorites module must react to scoreboard refreshes");
 assert(favorites.includes('aria-pressed'), "favorites controls must expose pressed state");
 assert(favorites.includes('favorite-hidden'), "favorites module must support filtering non-favorite games");
+assert(favorites.includes('favorite-row-button'), "scoreboard rows must expose inline favorite controls");
+assert(favorites.includes('favorites-filter-empty'), "filtered My Teams view must expose an empty state");
+assert(favorites.includes('stopPropagation'), "inline favorite controls must not navigate into Gamecast");
+assert(favorites.includes('aria-live'), "filtered empty state should be announced accessibly");
 
 console.log("Favorites integration contract valid.");

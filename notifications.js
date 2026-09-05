@@ -51,7 +51,7 @@
     var nm = row.querySelector(".nm");
     if (!nm) return "";
     var clone = nm.cloneNode(true);
-    Array.prototype.forEach.call(clone.querySelectorAll(".rec,.poss,.favorite-row-toggle"), function (node) { node.remove(); });
+    Array.prototype.forEach.call(clone.querySelectorAll(".rec,.poss,.favorite-row-toggle,.favorite-row-button"), function (node) { node.remove(); });
     return clone.textContent.trim();
   }
 

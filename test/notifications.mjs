@@ -71,34 +71,29 @@ assert('renders five configurable alert categories', panel.options === 5, panel.
 assert('baseline render does not notify', panel.initialNotifications === 0, panel.initialNotifications);
 assert('favorite fixture renders', await page.locator(favoriteCardSelector).count() === 1);
 
-// Simulate kickoff for the favorite team.
 await page.evaluate(selector => {
   const card = document.querySelector(selector);
   card.querySelector('.game-status').innerHTML = '<span class="live"><span class="live-dot"></span>15:00 - 1st</span>';
 }, favoriteCardSelector);
 await page.waitForTimeout(80);
 
-// Simulate a favorite-team score and lead change.
 await page.evaluate(selector => {
   const rows = document.querySelector(selector).querySelectorAll('.row');
   rows[1].querySelector('.sc').textContent = '3';
 }, favoriteCardSelector);
 await page.waitForTimeout(80);
 
-// Simulate a score that does not change the leader.
 await page.evaluate(selector => {
   const rows = document.querySelector(selector).querySelectorAll('.row');
   rows[1].querySelector('.sc').textContent = '6';
 }, favoriteCardSelector);
 await page.waitForTimeout(80);
 
-// Enter the late-game window.
 await page.evaluate(selector => {
   document.querySelector(selector).querySelector('.game-status .live').textContent = '2:30 - 4th';
 }, favoriteCardSelector);
 await page.waitForTimeout(80);
 
-// Finish the game.
 await page.evaluate(selector => {
   document.querySelector(selector).querySelector('.game-status').innerHTML = '<span class="final">Final</span>';
 }, favoriteCardSelector);
