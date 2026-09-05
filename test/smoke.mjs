@@ -39,13 +39,31 @@ const idx = await page.evaluate(() => ({
   live: document.querySelectorAll('.game-status .live').length,
   href: document.querySelector('a.card')?.getAttribute('href') || '',
   days: document.querySelectorAll('.daylabel').length,
-  errHidden: document.getElementById('errorBox').classList.contains('hidden')
+  errHidden: document.getElementById('errorBox').classList.contains('hidden'),
+  favoriteButtons: document.querySelectorAll('.favorite-row-button').length
 }));
 assert('renders game cards', idx.cards >= 2, idx);
 assert('shows a live badge', idx.live >= 1);
 assert('cards link to gamecast', idx.href.startsWith('gamecast.html?event='), idx.href);
 assert('groups by day', idx.days >= 1);
 assert('no error banner', idx.errHidden);
+assert('adds an inline favorite control for each team row', idx.favoriteButtons >= 4, idx.favoriteButtons);
+
+const firstFavorite = page.locator('.favorite-row-button').first();
+await firstFavorite.click();
+assert('inline favorite becomes selected', await firstFavorite.getAttribute('aria-pressed') === 'true');
+assert('favorite persists in local storage', await page.evaluate(() => {
+  const items = JSON.parse(localStorage.getItem('sports-gamecast-favorites-v1') || '[]');
+  return items.length === 1 && items[0].startsWith('nfl:');
+}));
+await page.click('.my-teams-toggle');
+const filtered = await page.evaluate(() => ({
+  visible: Array.from(document.querySelectorAll('a.card')).filter(card => !card.classList.contains('favorite-hidden')).length,
+  pressed: document.querySelector('.my-teams-toggle')?.getAttribute('aria-pressed')
+}));
+assert('My Teams filter activates', filtered.pressed === 'true', filtered);
+assert('My Teams filter narrows the slate', filtered.visible === 1, filtered);
+
 await page.click('#themeToggle');
 assert('day/night toggle flips', await page.evaluate(() => document.body.classList.contains('light')));
 
