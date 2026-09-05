@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { validateSourceVerification } from "./broadcast-source-policy.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..");
@@ -37,6 +38,10 @@ for (const source of registry.sources) {
   assert(typeof source.name === "string" && source.name.trim(), `source ${source.id} requires a name`);
   assert(isHttps(source.providerUrl), `source ${source.id} providerUrl must use https`);
   assert(isHttps(source.streamUrl), `source ${source.id} streamUrl must use https`);
+
+  const verificationErrors = validateSourceVerification(source);
+  assert(verificationErrors.length === 0, verificationErrors.join("; "));
+
   if (source.allGames != null) assert(typeof source.allGames === "boolean", `source ${source.id} allGames must be boolean`);
   if (source.allGames === true) assert(!source.team && (source.scope === "national" || source.scope === "neutral"), `source ${source.id} allGames is only valid for non-team national/neutral sources`);
   if (source.streamUrl) {
