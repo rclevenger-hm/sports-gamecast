@@ -1,0 +1,18 @@
+{
+  "name": "Sports Gamecast",
+  "short_name": "Gamecast",
+  "description": "Live scores, favorite-team alerts, Gamecast views, and broadcast discovery.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0d0f12",
+  "theme_color": "#0d0f12",
+  "icons": [
+    {
+      "src": "app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
