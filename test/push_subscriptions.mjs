@@ -49,7 +49,10 @@ function harness({ subscribeStatus = 204 } = {}) {
   assert.equal(api.supported(), true);
   assert.equal(api.configured(), true);
 
-  const result = await api.subscribe(['nfl:chargers', ' nfl:chargers ', '', 'nfl:chiefs']);
+  const result = await api.subscribe(
+    ['nfl:chargers', ' nfl:chargers ', '', 'nfl:chiefs'],
+    { gameStart: true, scoreChanges: false, leadChanges: true, lateGame: false, final: true, unknown: true }
+  );
   assert.equal(result.toJSON().endpoint, 'https://push.example/subscription-1');
 
   const subscribeCall = calls.find((call) => call.type === 'pushManager.subscribe');
@@ -60,7 +63,23 @@ function harness({ subscribeStatus = 204 } = {}) {
   assert.equal(registration.url, 'https://alerts.example/subscriptions');
   assert.equal(registration.options.credentials, 'omit');
   assert.equal(registration.options.cache, 'no-store');
-  assert.deepEqual(JSON.parse(registration.options.body).teamKeys, ['nfl:chargers', 'nfl:chiefs']);
+  const body = JSON.parse(registration.options.body);
+  assert.deepEqual(body.teamKeys, ['nfl:chargers', 'nfl:chiefs']);
+  assert.deepEqual(body.preferences, {
+    gameStart: true,
+    scoreChanges: false,
+    leadChanges: true,
+    lateGame: false,
+    final: true,
+  });
+  assert.equal(Object.hasOwn(body.preferences, 'unknown'), false, 'unknown preference keys must not cross the subscription boundary');
+}
+
+{
+  const { api, calls } = harness();
+  await api.subscribe(['nfl:chargers'], null);
+  const registration = calls.find((call) => call.type === 'fetch');
+  assert.deepEqual(JSON.parse(registration.options.body).preferences, {});
 }
 
 {
