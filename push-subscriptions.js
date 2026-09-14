@@ -1,6 +1,8 @@
 (function (global) {
   "use strict";
 
+  var ALERT_PREFERENCE_KEYS = ["gameStart", "scoreChanges", "leadChanges", "lateGame", "final"];
+
   function config() {
     var value = global.SPORTS_GAMECAST_PUSH_CONFIG || {};
     return {
@@ -41,6 +43,15 @@
     }).map(function (value) { return value.trim(); }))).sort();
   }
 
+  function normalizePreferences(preferences) {
+    var value = preferences && typeof preferences === "object" && !Array.isArray(preferences) ? preferences : {};
+    var normalized = {};
+    ALERT_PREFERENCE_KEYS.forEach(function (key) {
+      if (typeof value[key] === "boolean") normalized[key] = value[key];
+    });
+    return normalized;
+  }
+
   async function postJson(url, body) {
     var response = await global.fetch(url, {
       method: "POST",
@@ -62,7 +73,7 @@
     return ready.pushManager.getSubscription();
   }
 
-  async function subscribe(teamKeys) {
+  async function subscribe(teamKeys, preferences) {
     var value = config();
     if (!configured()) throw new Error("Background push is not configured for this deployment");
 
@@ -84,7 +95,8 @@
     try {
       await postJson(value.subscribeUrl, {
         subscription: subscription.toJSON ? subscription.toJSON() : subscription,
-        teamKeys: normalizeTeamKeys(teamKeys)
+        teamKeys: normalizeTeamKeys(teamKeys),
+        preferences: normalizePreferences(preferences)
       });
     } catch (error) {
       if (created && subscription && typeof subscription.unsubscribe === "function") {
