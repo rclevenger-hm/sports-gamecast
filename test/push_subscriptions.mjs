@@ -9,14 +9,18 @@ function harness({ subscribeStatus = 204 } = {}) {
   let localUnsubscribeCount = 0;
   let subscription = null;
 
+  function makeSubscription() {
+    return {
+      toJSON() { return { endpoint: 'https://push.example/subscription-1', keys: { p256dh: 'key', auth: 'auth' } }; },
+      async unsubscribe() { localUnsubscribeCount += 1; subscription = null; return true; },
+    };
+  }
+
   const pushManager = {
     async getSubscription() { return subscription; },
     async subscribe(options) {
       calls.push({ type: 'pushManager.subscribe', options });
-      subscription = {
-        toJSON() { return { endpoint: 'https://push.example/subscription-1', keys: { p256dh: 'key', auth: 'auth' } }; },
-        async unsubscribe() { localUnsubscribeCount += 1; subscription = null; return true; },
-      };
+      subscription = makeSubscription();
       return subscription;
     },
   };
@@ -33,6 +37,8 @@ function harness({ subscribeStatus = 204 } = {}) {
       permission: 'default',
       async requestPermission() { calls.push({ type: 'permission' }); return 'granted'; },
     },
+    CustomEvent: class CustomEvent { constructor(type) { this.type = type; } },
+    dispatchEvent(event) { calls.push({ type: 'event', event: event.type }); },
     atob,
     async fetch(url, options) {
       calls.push({ type: 'fetch', url, options });
@@ -41,13 +47,19 @@ function harness({ subscribeStatus = 204 } = {}) {
   };
 
   vm.runInNewContext(source, { window, Uint8Array, Set, Array, Error, JSON });
-  return { api: window.SportsGamecastPush, calls, getLocalUnsubscribeCount: () => localUnsubscribeCount };
+  return {
+    api: window.SportsGamecastPush,
+    calls,
+    getLocalUnsubscribeCount: () => localUnsubscribeCount,
+    seedSubscription() { subscription = makeSubscription(); return subscription; },
+  };
 }
 
 {
   const { api, calls } = harness();
   assert.equal(api.supported(), true);
   assert.equal(api.configured(), true);
+  assert.ok(calls.some((call) => call.type === 'event' && call.event === 'sports-gamecast:push-ready'));
 
   const result = await api.subscribe(
     ['nfl:chargers', ' nfl:chargers ', '', 'nfl:chiefs'],
@@ -80,6 +92,32 @@ function harness({ subscribeStatus = 204 } = {}) {
   await api.subscribe(['nfl:chargers'], null);
   const registration = calls.find((call) => call.type === 'fetch');
   assert.deepEqual(JSON.parse(registration.options.body).preferences, {});
+}
+
+{
+  const { api, calls } = harness();
+  const synced = await api.sync(['nfl:chargers'], { final: true });
+  assert.equal(synced, false, 'sync should not create a browser subscription');
+  assert.equal(calls.filter((call) => call.type === 'fetch').length, 0);
+  assert.equal(calls.filter((call) => call.type === 'pushManager.subscribe').length, 0);
+}
+
+{
+  const { api, calls, seedSubscription } = harness();
+  seedSubscription();
+  const synced = await api.sync(
+    ['nfl:chiefs', ' nfl:chargers ', 'nfl:chiefs'],
+    { gameStart: false, scoreChanges: true, final: true, unknown: true }
+  );
+  assert.equal(synced, true);
+  assert.equal(calls.filter((call) => call.type === 'pushManager.subscribe').length, 0, 'sync must reuse an existing browser subscription');
+  const registration = calls.find((call) => call.type === 'fetch');
+  assert.deepEqual(JSON.parse(registration.options.body).teamKeys, ['nfl:chargers', 'nfl:chiefs']);
+  assert.deepEqual(JSON.parse(registration.options.body).preferences, {
+    gameStart: false,
+    scoreChanges: true,
+    final: true,
+  });
 }
 
 {
