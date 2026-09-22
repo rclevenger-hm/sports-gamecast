@@ -73,6 +73,23 @@
     return ready.pushManager.getSubscription();
   }
 
+  function registrationBody(subscription, teamKeys, preferences) {
+    return {
+      subscription: subscription.toJSON ? subscription.toJSON() : subscription,
+      teamKeys: normalizeTeamKeys(teamKeys),
+      preferences: normalizePreferences(preferences)
+    };
+  }
+
+  async function sync(teamKeys, preferences) {
+    var value = config();
+    if (!configured()) return false;
+    var subscription = await getSubscription();
+    if (!subscription) return false;
+    await postJson(value.subscribeUrl, registrationBody(subscription, teamKeys, preferences));
+    return true;
+  }
+
   async function subscribe(teamKeys, preferences) {
     var value = config();
     if (!configured()) throw new Error("Background push is not configured for this deployment");
@@ -93,11 +110,7 @@
     }
 
     try {
-      await postJson(value.subscribeUrl, {
-        subscription: subscription.toJSON ? subscription.toJSON() : subscription,
-        teamKeys: normalizeTeamKeys(teamKeys),
-        preferences: normalizePreferences(preferences)
-      });
+      await postJson(value.subscribeUrl, registrationBody(subscription, teamKeys, preferences));
     } catch (error) {
       if (created && subscription && typeof subscription.unsubscribe === "function") {
         try { await subscription.unsubscribe(); } catch (_rollbackError) {}
@@ -123,7 +136,12 @@
     configured: configured,
     supported: supported,
     getSubscription: getSubscription,
+    sync: sync,
     subscribe: subscribe,
     unsubscribe: unsubscribe
   };
+
+  if (typeof global.dispatchEvent === "function" && typeof global.CustomEvent === "function") {
+    global.dispatchEvent(new global.CustomEvent("sports-gamecast:push-ready"));
+  }
 })(window);
