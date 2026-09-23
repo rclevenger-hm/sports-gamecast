@@ -2,13 +2,18 @@
   "use strict";
 
   var ALERT_PREFERENCE_KEYS = ["gameStart", "scoreChanges", "leadChanges", "lateGame", "final"];
+  var DEFAULT_REQUEST_TIMEOUT_MS = 10000;
 
   function config() {
     var value = global.SPORTS_GAMECAST_PUSH_CONFIG || {};
+    var configuredTimeout = Number(value.requestTimeoutMs);
     return {
       publicKey: typeof value.publicKey === "string" ? value.publicKey.trim() : "",
       subscribeUrl: typeof value.subscribeUrl === "string" ? value.subscribeUrl.trim() : "",
-      unsubscribeUrl: typeof value.unsubscribeUrl === "string" ? value.unsubscribeUrl.trim() : ""
+      unsubscribeUrl: typeof value.unsubscribeUrl === "string" ? value.unsubscribeUrl.trim() : "",
+      requestTimeoutMs: Number.isFinite(configuredTimeout) && configuredTimeout >= 1000 && configuredTimeout <= 60000
+        ? configuredTimeout
+        : DEFAULT_REQUEST_TIMEOUT_MS
     };
   }
 
@@ -53,14 +58,30 @@
   }
 
   async function postJson(url, body) {
-    var response = await global.fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      cache: "no-store",
-      credentials: "omit",
-      body: JSON.stringify(body)
-    });
-    if (!response.ok) throw new Error("Push subscription endpoint returned HTTP " + response.status);
+    var value = config();
+    var controller = typeof global.AbortController === "function" ? new global.AbortController() : null;
+    var timer = controller && typeof global.setTimeout === "function"
+      ? global.setTimeout(function () { controller.abort(); }, value.requestTimeoutMs)
+      : null;
+
+    try {
+      var response = await global.fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        cache: "no-store",
+        credentials: "omit",
+        signal: controller ? controller.signal : undefined,
+        body: JSON.stringify(body)
+      });
+      if (!response.ok) throw new Error("Push subscription endpoint returned HTTP " + response.status);
+    } catch (error) {
+      if (controller && controller.signal.aborted) {
+        throw new Error("Push subscription endpoint timed out after " + value.requestTimeoutMs + "ms");
+      }
+      throw error;
+    } finally {
+      if (timer !== null && typeof global.clearTimeout === "function") global.clearTimeout(timer);
+    }
   }
 
   async function registration() {
