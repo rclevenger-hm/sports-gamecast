@@ -34,6 +34,24 @@ await page.addInitScript(() => {
   }));
 
   window.__notifications = [];
+  window.__pushCalls = [];
+  window.SportsGamecastPush = {
+    configured() { return true; },
+    async getSubscription() { return null; },
+    async sync(teamKeys, preferences) {
+      window.__pushCalls.push({ type: 'sync', teamKeys, preferences });
+      return false;
+    },
+    async subscribe(teamKeys, preferences) {
+      window.__pushCalls.push({ type: 'subscribe', teamKeys, preferences });
+      return { endpoint: 'mock' };
+    },
+    async unsubscribe() {
+      window.__pushCalls.push({ type: 'unsubscribe' });
+      return true;
+    }
+  };
+
   class MockNotification {
     static permission = 'granted';
     static requestPermission() { return Promise.resolve('granted'); }
@@ -63,13 +81,27 @@ const panel = await page.evaluate(() => ({
   exists: Boolean(document.querySelector('.alerts-panel')),
   active: document.querySelector('.alerts-enable')?.getAttribute('aria-pressed'),
   options: document.querySelectorAll('.alerts-options input').length,
+  background: document.querySelector('.alerts-background')?.textContent,
+  backgroundPressed: document.querySelector('.alerts-background')?.getAttribute('aria-pressed'),
   initialNotifications: window.__notifications.length
 }));
 assert('renders notification preferences', panel.exists, panel);
 assert('restores enabled preference', panel.active === 'true', panel.active);
 assert('renders five configurable alert categories', panel.options === 5, panel.options);
+assert('shows explicit background alert opt-in when configured', panel.background === 'Enable background alerts', panel.background);
+assert('background alerts start disabled without a subscription', panel.backgroundPressed === 'false', panel.backgroundPressed);
 assert('baseline render does not notify', panel.initialNotifications === 0, panel.initialNotifications);
 assert('favorite fixture renders', await page.locator(favoriteCardSelector).count() === 1);
+
+await page.locator('.alerts-background').click();
+await page.waitForTimeout(30);
+const pushState = await page.evaluate(() => ({
+  calls: window.__pushCalls.slice(),
+  text: document.querySelector('.alerts-background')?.textContent,
+  pressed: document.querySelector('.alerts-background')?.getAttribute('aria-pressed')
+}));
+assert('background opt-in registers favorite-team preferences', pushState.calls.some(call => call.type === 'subscribe' && call.teamKeys.includes('nfl:lac') && call.preferences.final === true), pushState.calls);
+assert('background opt-in reflects active state', pushState.text === 'Disable background alerts' && pushState.pressed === 'true', pushState);
 
 await page.evaluate(selector => {
   const card = document.querySelector(selector);

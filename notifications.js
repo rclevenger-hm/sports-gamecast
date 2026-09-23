@@ -178,6 +178,74 @@
   var previousByGame = safeParse(SNAPSHOT_KEY, {});
   if (!previousByGame || typeof previousByGame !== "object" || Array.isArray(previousByGame)) previousByGame = {};
   var processing = false;
+  var backgroundState = "unavailable";
+  var backgroundError = "";
+  var lastPushSignature = "";
+
+  function pushApi() {
+    return window.SportsGamecastPush || null;
+  }
+
+  function pushConfigured() {
+    var api = pushApi();
+    return Boolean(api && typeof api.configured === "function" && api.configured());
+  }
+
+  function pushSignature() {
+    return JSON.stringify({
+      favorites: readFavorites().slice().sort(),
+      preferences: {
+        gameStart: prefs.gameStart,
+        scoreChanges: prefs.scoreChanges,
+        leadChanges: prefs.leadChanges,
+        lateGame: prefs.lateGame,
+        final: prefs.final
+      }
+    });
+  }
+
+  async function syncBackgroundPush() {
+    var api = pushApi();
+    if (!pushConfigured() || !api || typeof api.sync !== "function") return false;
+    var signature = pushSignature();
+    if (signature === lastPushSignature) return backgroundState === "active";
+    try {
+      var synced = await api.sync(readFavorites(), prefs);
+      if (synced) {
+        lastPushSignature = signature;
+        backgroundState = "active";
+        backgroundError = "";
+      }
+      return synced;
+    } catch (error) {
+      backgroundState = "error";
+      backgroundError = error && error.message ? error.message : "Background alert sync failed";
+      renderPanel();
+      return false;
+    }
+  }
+
+  async function refreshBackgroundState() {
+    var api = pushApi();
+    if (!pushConfigured() || !api || typeof api.getSubscription !== "function") {
+      backgroundState = "unavailable";
+      backgroundError = "";
+      renderPanel();
+      return;
+    }
+    backgroundState = "checking";
+    renderPanel();
+    try {
+      var subscription = await api.getSubscription();
+      backgroundState = subscription ? "active" : "inactive";
+      backgroundError = "";
+      if (subscription) await syncBackgroundPush();
+    } catch (error) {
+      backgroundState = "error";
+      backgroundError = error && error.message ? error.message : "Unable to read background alert status";
+    }
+    renderPanel();
+  }
 
   function processBoard() {
     if (processing) return;
@@ -197,6 +265,7 @@
     previousByGame = next;
     safeWrite(SNAPSHOT_KEY, previousByGame);
     processing = false;
+    syncBackgroundPush();
   }
 
   var style = document.createElement("style");
@@ -204,9 +273,11 @@
     ".alerts-panel{margin:10px 0 2px;padding:10px 12px;background:var(--panel);border:1px solid var(--border);border-radius:10px}",
     ".alerts-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}",
     ".alerts-title{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:var(--muted)}",
-    ".alerts-enable{background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:999px;padding:5px 9px;font-size:11px;cursor:pointer}",
-    ".alerts-enable.active{border-color:var(--accent);color:var(--accent)}",
-    ".alerts-status{font-size:10px;color:var(--muted)}",
+    ".alerts-enable,.alerts-background{background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:999px;padding:5px 9px;font-size:11px;cursor:pointer}",
+    ".alerts-enable.active,.alerts-background.active{border-color:var(--accent);color:var(--accent)}",
+    ".alerts-enable:disabled,.alerts-background:disabled{opacity:.55;cursor:not-allowed}",
+    ".alerts-status,.alerts-background-status{font-size:10px;color:var(--muted)}",
+    ".alerts-background-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px}",
     ".alerts-options{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;font-size:11px;color:var(--muted)}",
     ".alerts-options label{display:inline-flex;gap:5px;align-items:center;cursor:pointer}",
     ".alerts-options input{accent-color:var(--accent)}"
@@ -227,9 +298,18 @@
     return "Permission is requested only when you enable alerts.";
   }
 
+  function backgroundStatusText() {
+    if (backgroundState === "checking") return "Checking background alert status…";
+    if (backgroundState === "active") return "Background alerts stay available when this page is closed.";
+    if (backgroundState === "error") return backgroundError || "Background alert service is unavailable.";
+    return "Background alerts are off.";
+  }
+
   function savePrefs() {
     safeWrite(PREFS_KEY, prefs);
+    lastPushSignature = "";
     renderPanel();
+    syncBackgroundPush();
   }
 
   function option(label, key) {
@@ -293,10 +373,52 @@
     options.appendChild(option("Late game", "lateGame"));
     options.appendChild(option("Final", "final"));
     panel.appendChild(options);
+
+    if (pushConfigured()) {
+      var backgroundRow = document.createElement("div");
+      backgroundRow.className = "alerts-background-row";
+      var background = document.createElement("button");
+      background.type = "button";
+      background.className = "alerts-background" + (backgroundState === "active" ? " active" : "");
+      background.textContent = backgroundState === "active" ? "Disable background alerts" : "Enable background alerts";
+      background.setAttribute("aria-pressed", backgroundState === "active" ? "true" : "false");
+      background.disabled = backgroundState === "checking";
+      background.addEventListener("click", async function () {
+        var api = pushApi();
+        if (!api) return;
+        background.disabled = true;
+        backgroundError = "";
+        try {
+          if (backgroundState === "active") {
+            await api.unsubscribe();
+            backgroundState = "inactive";
+            lastPushSignature = "";
+          } else {
+            await api.subscribe(readFavorites(), prefs);
+            backgroundState = "active";
+            lastPushSignature = pushSignature();
+          }
+        } catch (error) {
+          backgroundState = "error";
+          backgroundError = error && error.message ? error.message : "Unable to update background alerts";
+        }
+        renderPanel();
+      });
+      backgroundRow.appendChild(background);
+
+      var backgroundStatus = document.createElement("span");
+      backgroundStatus.className = "alerts-background-status";
+      backgroundStatus.setAttribute("role", "status");
+      backgroundStatus.textContent = backgroundStatusText();
+      backgroundRow.appendChild(backgroundStatus);
+      panel.appendChild(backgroundRow);
+    }
   }
 
   var observer = new MutationObserver(function () { processBoard(); });
   observer.observe(board, { childList: true, subtree: true, characterData: true });
+  window.addEventListener("sports-gamecast:push-ready", refreshBackgroundState);
   renderPanel();
   processBoard();
+  refreshBackgroundState();
 })();
