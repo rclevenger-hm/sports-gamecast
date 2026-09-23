@@ -4,7 +4,7 @@ import vm from 'node:vm';
 
 const source = readFileSync(new URL('../push-subscriptions.js', import.meta.url), 'utf8');
 
-function harness({ subscribeStatus = 204 } = {}) {
+function harness({ subscribeStatus = 204, timeoutOnFetch = false, requestTimeoutMs } = {}) {
   const calls = [];
   let localUnsubscribeCount = 0;
   let subscription = null;
@@ -25,12 +25,15 @@ function harness({ subscribeStatus = 204 } = {}) {
     },
   };
 
+  const pushConfig = {
+    publicKey: 'AQAB',
+    subscribeUrl: 'https://alerts.example/subscriptions',
+    unsubscribeUrl: 'https://alerts.example/subscriptions/remove',
+  };
+  if (requestTimeoutMs !== undefined) pushConfig.requestTimeoutMs = requestTimeoutMs;
+
   const window = {
-    SPORTS_GAMECAST_PUSH_CONFIG: {
-      publicKey: 'AQAB',
-      subscribeUrl: 'https://alerts.example/subscriptions',
-      unsubscribeUrl: 'https://alerts.example/subscriptions/remove',
-    },
+    SPORTS_GAMECAST_PUSH_CONFIG: pushConfig,
     navigator: { serviceWorker: { ready: Promise.resolve({ pushManager }) } },
     PushManager: function PushManager() {},
     Notification: {
@@ -42,9 +45,24 @@ function harness({ subscribeStatus = 204 } = {}) {
     atob,
     async fetch(url, options) {
       calls.push({ type: 'fetch', url, options });
+      if (timeoutOnFetch) {
+        return new Promise((_resolve, reject) => {
+          options.signal.addEventListener('abort', () => reject(new Error('aborted by test timeout')), { once: true });
+        });
+      }
       return { ok: subscribeStatus >= 200 && subscribeStatus < 300, status: subscribeStatus };
     },
   };
+
+  if (timeoutOnFetch) {
+    window.AbortController = AbortController;
+    window.setTimeout = (callback, delay) => {
+      calls.push({ type: 'timeout', delay });
+      Promise.resolve().then(callback);
+      return 1;
+    };
+    window.clearTimeout = (timer) => calls.push({ type: 'clearTimeout', timer });
+  }
 
   vm.runInNewContext(source, { window, Uint8Array, Set, Array, Error, JSON });
   return {
@@ -133,6 +151,14 @@ function harness({ subscribeStatus = 204 } = {}) {
   const { api, getLocalUnsubscribeCount } = harness({ subscribeStatus: 503 });
   await assert.rejects(api.subscribe(['nfl:chargers']), /HTTP 503/);
   assert.equal(getLocalUnsubscribeCount(), 1, 'new browser subscription should roll back if server registration fails');
+}
+
+{
+  const { api, calls, getLocalUnsubscribeCount } = harness({ timeoutOnFetch: true, requestTimeoutMs: 1250 });
+  await assert.rejects(api.subscribe(['nfl:chargers']), /timed out after 1250ms/);
+  assert.equal(getLocalUnsubscribeCount(), 1, 'new browser subscription should roll back if registration times out');
+  assert.ok(calls.some((call) => call.type === 'timeout' && call.delay === 1250), 'configured request timeout should bound endpoint calls');
+  assert.ok(calls.some((call) => call.type === 'clearTimeout'), 'request timer should always be cleared');
 }
 
 console.log('Push subscription lifecycle checks passed.');
