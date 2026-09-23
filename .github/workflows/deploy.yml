@@ -69,6 +69,20 @@ jobs:
           sed -i 's|</head>|  <link rel="manifest" href="manifest.webmanifest">\n  <meta name="theme-color" content="#0d0f12">\n</head>|' _site/index.html
           sed -i 's|</body>|  <script src="push-subscriptions.js"></script>\n  <script src="pwa.js"></script>\n</body>|' _site/index.html
           sed -i 's|</body>|  <script src="sport-visuals.js"></script>\n  <script src="listen-live.js"></script>\n</body>|' _site/gamecast.html
+      - name: Add Cloudflare Web Analytics
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+          const path = require("path");
+          const beacon = "<script type=\"module\" src=\"https://static.cloudflareinsights.com/beacon.min.js\" data-cf-beacon='{\"token\":\"5622984e1fc6491f8ab1d361b31710d7\"}'></script>";
+          for (const name of ["index.html", "gamecast.html", "ticker.html", "gamebar.html"]) {
+            const file = path.join("_site", name);
+            const html = fs.readFileSync(file, "utf8");
+            if (!html.includes("static.cloudflareinsights.com/beacon.min.js")) {
+              fs.writeFileSync(file, html.replace("</body>", `  ${beacon}\n</body>`));
+            }
+          }
+          NODE
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
