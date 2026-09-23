@@ -69,6 +69,7 @@ A correction from the upstream provider should create a new transition only when
 - **Expired push subscription:** remove or quarantine it after the provider returns the terminal status defined by Web Push semantics.
 - **Partial fan-out failure:** retry only failed subscriptions using the same event key.
 - **Scheduler overlap:** use a lease/lock or idempotent transition writes so concurrent collectors do not double-send.
+- **Browser subscription endpoint unavailable:** registration, synchronization, and removal calls are bounded to 10 seconds by default so the UI cannot wait indefinitely. Deployments may set `SPORTS_GAMECAST_PUSH_CONFIG.requestTimeoutMs` between 1 and 60 seconds when a different bound is justified. A newly created browser subscription is rolled back if server registration fails or times out.
 
 ## Security boundary
 
