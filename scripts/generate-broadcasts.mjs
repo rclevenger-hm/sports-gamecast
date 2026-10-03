@@ -83,14 +83,44 @@ export function mapScoreboard(sport, scoreboard, registry) {
   return games;
 }
 
-export async function generateMappings({ registry, dates = defaultDates(), fetchImpl = fetch }) {
+function retryableStatus(status) {
+  return status === 408 || status === 425 || status === 429 || (status >= 500 && status <= 599);
+}
+
+export async function fetchScoreboard(url, {
+  fetchImpl = fetch,
+  retries = 2,
+  sleepImpl = ms => new Promise(resolve => setTimeout(resolve, ms))
+} = {}) {
+  for (let attempt = 0; ; attempt += 1) {
+    const response = await fetchImpl(url, { headers: { accept: "application/json" } });
+    if (response.ok) return response.json();
+
+    if (!retryableStatus(response.status) || attempt >= retries) {
+      throw new Error(`schedule fetch failed: HTTP ${response.status}`);
+    }
+
+    await sleepImpl(250 * (2 ** attempt));
+  }
+}
+
+export async function generateMappings({
+  registry,
+  dates = defaultDates(),
+  fetchImpl = fetch,
+  retries = 2,
+  sleepImpl
+}) {
   const games = {};
   for (const [sport, pathPart] of Object.entries(SPORTS)) {
     for (const date of dates) {
       const url = `https://site.api.espn.com/apis/site/v2/sports/${pathPart}/scoreboard?dates=${date}`;
-      const response = await fetchImpl(url, { headers: { accept: "application/json" } });
-      if (!response.ok) throw new Error(`schedule fetch failed for ${sport} ${date}: HTTP ${response.status}`);
-      Object.assign(games, mapScoreboard(sport, await response.json(), registry));
+      try {
+        const scoreboard = await fetchScoreboard(url, { fetchImpl, retries, sleepImpl });
+        Object.assign(games, mapScoreboard(sport, scoreboard, registry));
+      } catch (error) {
+        throw new Error(`schedule fetch failed for ${sport} ${date}: ${error.message}`, { cause: error });
+      }
     }
   }
   return { schemaVersion: 1, generatedAt: new Date().toISOString(), games };
