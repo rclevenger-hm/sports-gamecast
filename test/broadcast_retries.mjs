@@ -78,7 +78,10 @@ test("the next request waits for the backoff to finish", async () => {
       return backoff;
     }
   });
-  await sleeping;
+  await Promise.race([
+    sleeping,
+    pending.then(() => assert.fail("the request completed without starting backoff"))
+  ]);
   try {
     assert.equal(requests.calls.length, 1, "the retry must not start while backoff is pending");
     assert.deepEqual(requests.delays, [250]);
