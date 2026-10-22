@@ -102,7 +102,22 @@
     };
   }
 
-  async function sync(teamKeys, preferences) {
+  // Order acknowledged writes from this page. This cannot order other tabs or
+  // a server write that completes after a client-side timeout.
+  var pendingMutation = Promise.resolve();
+  function enqueueMutation(operation) {
+    var result = pendingMutation.then(operation);
+    pendingMutation = result.catch(function () {});
+    return result;
+  }
+
+  function sync(teamKeys, preferences) {
+    var teams = normalizeTeamKeys(teamKeys);
+    var settings = normalizePreferences(preferences);
+    return enqueueMutation(function () { return syncNow(teams, settings); });
+  }
+
+  async function syncNow(teamKeys, preferences) {
     var value = config();
     if (!configured()) return false;
     var subscription = await getSubscription();
@@ -112,12 +127,28 @@
   }
 
   async function subscribe(teamKeys, preferences) {
+    if (!configured()) return Promise.reject(new Error("Background push is not configured for this deployment"));
+    var teams = normalizeTeamKeys(teamKeys);
+    var settings = normalizePreferences(preferences);
+    // Request permission during the click gesture, not after queued network work.
+    var permission = global.Notification.permission === "default"
+      ? global.Notification.requestPermission()
+      : Promise.resolve(global.Notification.permission);
+    // Attach the rejection handler immediately even if earlier work is pending.
+    var allowed = Promise.resolve(permission).then(function (value) {
+      return { permission: value };
+    }, function (error) { return { error: error }; });
+    return enqueueMutation(async function () {
+      var result = await allowed;
+      if (result.error) throw result.error;
+      if (result.permission !== "granted") throw new Error("Notification permission was not granted");
+      return subscribeNow(teams, settings);
+    });
+  }
+
+  async function subscribeNow(teamKeys, preferences) {
     var value = config();
     if (!configured()) throw new Error("Background push is not configured for this deployment");
-
-    var permission = global.Notification.permission;
-    if (permission === "default") permission = await global.Notification.requestPermission();
-    if (permission !== "granted") throw new Error("Notification permission was not granted");
 
     var ready = await registration();
     var subscription = await ready.pushManager.getSubscription();
@@ -142,7 +173,11 @@
     return subscription;
   }
 
-  async function unsubscribe() {
+  function unsubscribe() {
+    return enqueueMutation(unsubscribeNow);
+  }
+
+  async function unsubscribeNow() {
     var value = config();
     var subscription = await getSubscription();
     if (!subscription) return false;
