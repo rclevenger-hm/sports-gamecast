@@ -4,7 +4,7 @@ import vm from 'node:vm';
 
 const source = readFileSync(new URL('../push-subscriptions.js', import.meta.url), 'utf8');
 
-function harness({ subscribeStatus = 204, timeoutOnFetch = false, requestTimeoutMs } = {}) {
+function harness({ subscribeStatus = 204, timeoutOnFetch = false, requestTimeoutMs, fetchResponse } = {}) {
   const calls = [];
   let localUnsubscribeCount = 0;
   let subscription = null;
@@ -45,6 +45,7 @@ function harness({ subscribeStatus = 204, timeoutOnFetch = false, requestTimeout
     atob,
     async fetch(url, options) {
       calls.push({ type: 'fetch', url, options });
+      if (fetchResponse) return fetchResponse(url, options);
       if (timeoutOnFetch) {
         return new Promise((_resolve, reject) => {
           options.signal.addEventListener('abort', () => reject(new Error('aborted by test timeout')), { once: true });
@@ -159,6 +160,121 @@ function harness({ subscribeStatus = 204, timeoutOnFetch = false, requestTimeout
   assert.equal(getLocalUnsubscribeCount(), 1, 'new browser subscription should roll back if registration times out');
   assert.ok(calls.some((call) => call.type === 'timeout' && call.delay === 1250), 'configured request timeout should bound endpoint calls');
   assert.ok(calls.some((call) => call.type === 'clearTimeout'), 'request timer should always be cleared');
+}
+
+// Hold endpoint responses explicitly: no clock-based race assumptions.
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+const flush = () => new Promise(resolve => setImmediate(resolve));
+
+{
+  const requests = [];
+  const { api, seedSubscription } = harness({ fetchResponse(url, options) {
+    const response = deferred();
+    requests.push({ url, body: JSON.parse(options.body), ...response });
+    return response.promise;
+  } });
+  seedSubscription();
+  const old = api.sync(['nfl:chargers'], { final: true });
+  await flush();
+  const teams = ['nfl:chiefs'];
+  const preferences = { final: false };
+  const latest = api.sync(teams, preferences);
+  teams.push('nfl:raiders');
+  preferences.final = true;
+  await flush();
+  assert.equal(requests.length, 1, 'new preference write must wait for the previous response');
+  requests[0].resolve({ ok: true });
+  await old;
+  await flush();
+  assert.equal(requests.length, 2);
+  assert.deepEqual(requests[1].body.teamKeys, ['nfl:chiefs'], 'queued teams are captured at invocation');
+  assert.deepEqual(requests[1].body.preferences, { final: false }, 'queued preferences are captured at invocation');
+  requests[1].resolve({ ok: true });
+  await latest;
+}
+
+{
+  const requests = [];
+  const { api, calls, seedSubscription, getLocalUnsubscribeCount } = harness({ fetchResponse(url, options) {
+    const response = deferred();
+    requests.push({ url, ...response });
+    return response.promise;
+  } });
+  seedSubscription();
+  const syncing = api.sync(['nfl:chargers'], { final: true });
+  await flush();
+  const removing = api.unsubscribe();
+  const afterRemoval = api.sync(['nfl:chiefs'], { final: false });
+  await flush();
+  assert.equal(getLocalUnsubscribeCount(), 0, 'disable waits for any registration write to finish');
+  assert.equal(requests.length, 1);
+  requests[0].resolve({ ok: true });
+  await syncing;
+  await flush();
+  assert.equal(requests[1].url, 'https://alerts.example/subscriptions/remove');
+  requests[1].resolve({ ok: true });
+  assert.equal(await removing, true);
+  assert.equal(await afterRemoval, false, 'later sync must not resurrect a removed subscription');
+  assert.equal(calls.filter(call => call.type === 'fetch').length, 2);
+}
+
+{
+  const requests = [];
+  const { api, getLocalUnsubscribeCount } = harness({ fetchResponse() {
+    const response = deferred();
+    requests.push(response);
+    return response.promise;
+  } });
+  const enabling = api.subscribe(['nfl:chargers'], { final: true });
+  await flush();
+  const disabling = api.unsubscribe();
+  await flush();
+  assert.equal(getLocalUnsubscribeCount(), 0, 'disable must not race a pending enable');
+  requests[0].resolve({ ok: true });
+  await enabling;
+  await flush();
+  assert.equal(getLocalUnsubscribeCount(), 1);
+  requests[1].resolve({ ok: true });
+  assert.equal(await disabling, true);
+}
+
+{
+  let attempts = 0;
+  const { api, seedSubscription } = harness({ fetchResponse() {
+    attempts += 1;
+    return { ok: attempts > 1, status: attempts > 1 ? 204 : 503 };
+  } });
+  seedSubscription();
+  const failed = api.sync(['nfl:chargers'], { final: true });
+  const retry = api.sync(['nfl:chiefs'], { final: false });
+  await assert.rejects(failed, /HTTP 503/);
+  assert.equal(await retry, true, 'a rejected operation must not poison subsequent queued work');
+  assert.equal(attempts, 2);
+}
+
+{
+  const response = deferred();
+  let attempts = 0;
+  const { api, calls, seedSubscription } = harness({ fetchResponse() {
+    attempts += 1;
+    return attempts === 1 ? response.promise : { ok: true };
+  } });
+  seedSubscription();
+  const syncing = api.sync(['nfl:chargers'], { final: true });
+  await flush();
+  const enabling = api.subscribe(['nfl:chiefs'], { final: false });
+  assert.equal(calls.filter(call => call.type === 'permission').length, 1,
+    'permission prompt must run synchronously during the caller gesture, even while writes are queued');
+  assert.equal(attempts, 1);
+  response.resolve({ ok: true });
+  await syncing;
+  await enabling;
+  assert.equal(attempts, 2);
 }
 
 console.log('Push subscription lifecycle checks passed.');

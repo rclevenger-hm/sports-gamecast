@@ -181,6 +181,7 @@
   var backgroundState = "unavailable";
   var backgroundError = "";
   var lastPushSignature = "";
+  var backgroundBusy = false;
 
   function pushApi() {
     return window.SportsGamecastPush || null;
@@ -206,7 +207,7 @@
 
   async function syncBackgroundPush() {
     var api = pushApi();
-    if (!pushConfigured() || !api || typeof api.sync !== "function") return false;
+    if (backgroundBusy || !pushConfigured() || !api || typeof api.sync !== "function") return false;
     var signature = pushSignature();
     if (signature === lastPushSignature) return backgroundState === "active";
     try {
@@ -215,6 +216,9 @@
         lastPushSignature = signature;
         backgroundState = "active";
         backgroundError = "";
+        // The latest selection may have returned to the last saved signature
+        // while this request was pending (A -> B -> A). Converge after success.
+        if (pushSignature() !== signature) syncBackgroundPush();
       }
       return synced;
     } catch (error) {
@@ -226,6 +230,7 @@
   }
 
   async function refreshBackgroundState() {
+    if (backgroundBusy) return;
     var api = pushApi();
     if (!pushConfigured() || !api || typeof api.getSubscription !== "function") {
       backgroundState = "unavailable";
@@ -382,11 +387,12 @@
       background.className = "alerts-background" + (backgroundState === "active" ? " active" : "");
       background.textContent = backgroundState === "active" ? "Disable background alerts" : "Enable background alerts";
       background.setAttribute("aria-pressed", backgroundState === "active" ? "true" : "false");
-      background.disabled = backgroundState === "checking";
+      background.disabled = backgroundBusy || backgroundState === "checking";
       background.addEventListener("click", async function () {
         var api = pushApi();
-        if (!api) return;
-        background.disabled = true;
+        if (!api || backgroundBusy) return;
+        backgroundBusy = true;
+        renderPanel();
         backgroundError = "";
         try {
           if (backgroundState === "active") {
@@ -394,15 +400,19 @@
             backgroundState = "inactive";
             lastPushSignature = "";
           } else {
+            var signature = pushSignature();
             await api.subscribe(readFavorites(), prefs);
             backgroundState = "active";
-            lastPushSignature = pushSignature();
+            lastPushSignature = signature;
           }
         } catch (error) {
           backgroundState = "error";
           backgroundError = error && error.message ? error.message : "Unable to update background alerts";
         }
+        backgroundBusy = false;
         renderPanel();
+        // Preferences/favorites may have changed while registration was pending.
+        if (backgroundState === "active") syncBackgroundPush();
       });
       backgroundRow.appendChild(background);
 

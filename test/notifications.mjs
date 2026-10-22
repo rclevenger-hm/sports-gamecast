@@ -35,19 +35,29 @@ await page.addInitScript(() => {
 
   window.__notifications = [];
   window.__pushCalls = [];
+  window.__holdSubscribe = true;
+  window.__subscribed = false;
   window.SportsGamecastPush = {
     configured() { return true; },
-    async getSubscription() { return null; },
+    async getSubscription() { return window.__subscribed ? { endpoint: 'mock' } : null; },
     async sync(teamKeys, preferences) {
-      window.__pushCalls.push({ type: 'sync', teamKeys, preferences });
-      return false;
+      window.__pushCalls.push({ type: 'sync', teamKeys: [...teamKeys], preferences: { ...preferences } });
+      if (window.__holdSync) {
+        window.__holdSync = false;
+        await new Promise(resolve => { window.__finishSync = resolve; });
+      }
+      return window.__subscribed;
     },
     async subscribe(teamKeys, preferences) {
-      window.__pushCalls.push({ type: 'subscribe', teamKeys, preferences });
+      window.__pushCalls.push({ type: 'subscribe', teamKeys: [...teamKeys], preferences: { ...preferences } });
+      if (window.__holdSubscribe) await new Promise(resolve => { window.__finishSubscribe = resolve; });
+      window.__subscribed = true;
       return { endpoint: 'mock' };
     },
     async unsubscribe() {
       window.__pushCalls.push({ type: 'unsubscribe' });
+      if (window.__holdUnsubscribe) await new Promise(resolve => { window.__finishUnsubscribe = resolve; });
+      window.__subscribed = false;
       return true;
     }
   };
@@ -94,7 +104,20 @@ assert('baseline render does not notify', panel.initialNotifications === 0, pane
 assert('favorite fixture renders', await page.locator(favoriteCardSelector).count() === 1);
 
 await page.locator('.alerts-background').click();
-await page.waitForTimeout(30);
+await page.waitForFunction(() => typeof window.__finishSubscribe === 'function');
+// Re-render the panel while enable is pending. Its replacement button must
+// remain locked and the changed preference must be sent after enable completes.
+await page.locator('.alerts-options input').last().uncheck();
+assert('background enable remains disabled after a preference re-render', await page.locator('.alerts-background').isDisabled());
+await page.evaluate(() => {
+  document.querySelector('.alerts-background').click();
+  window.__finishSubscribe();
+});
+await page.waitForFunction(() => window.__pushCalls.some(call => call.type === 'sync' && call.preferences.final === false));
+assert('pending enable cannot be submitted twice', await page.evaluate(() => window.__pushCalls.filter(call => call.type === 'subscribe').length === 1));
+assert('preference edited during enable is synchronized', await page.evaluate(() => window.__pushCalls.at(-1).preferences.final === false));
+await page.locator('.alerts-options input').last().check();
+await page.waitForFunction(() => window.__pushCalls.at(-1).preferences.final === true);
 const pushState = await page.evaluate(() => ({
   calls: window.__pushCalls.slice(),
   text: document.querySelector('.alerts-background')?.textContent,
@@ -102,6 +125,24 @@ const pushState = await page.evaluate(() => ({
 }));
 assert('background opt-in registers favorite-team preferences', pushState.calls.some(call => call.type === 'subscribe' && call.teamKeys.includes('nfl:lac') && call.preferences.final === true), pushState.calls);
 assert('background opt-in reflects active state', pushState.text === 'Disable background alerts' && pushState.pressed === 'true', pushState);
+
+// Return to the last acknowledged favorite set while an intermediate sync is
+// pending. Completion must converge to the current favorites, not stale B.
+await page.evaluate(selector => {
+  window.__holdSync = true;
+  localStorage.setItem('sports-gamecast-favorites-v1', JSON.stringify(['nfl:kc']));
+  const score = document.querySelector(selector).querySelector('.sc');
+  score.textContent = score.textContent;
+}, favoriteCardSelector);
+await page.waitForFunction(() => typeof window.__finishSync === 'function');
+await page.evaluate(selector => {
+  localStorage.setItem('sports-gamecast-favorites-v1', JSON.stringify(['nfl:lac']));
+  const score = document.querySelector(selector).querySelector('.sc');
+  score.textContent = score.textContent;
+}, favoriteCardSelector);
+await page.evaluate(() => window.__finishSync());
+await page.waitForFunction(() => window.__pushCalls.at(-1).type === 'sync' && window.__pushCalls.at(-1).teamKeys.includes('nfl:lac'));
+assert('favorite A to B to A converges after pending B completes', await page.evaluate(() => window.__pushCalls.at(-1).teamKeys.join(',') === 'nfl:lac'));
 
 await page.evaluate(selector => {
   const card = document.querySelector(selector);
@@ -139,6 +180,19 @@ assert('notifies on score update', titles.includes('Score update'), titles);
 assert('notifies on late-game transition', titles.includes('Late-game alert'), titles);
 assert('notifies on final', titles.includes('Final'), titles);
 assert('favorite score appears in alert body', notifications.some(n => String(n.body).includes('LAC 6')), notifications);
+
+await page.evaluate(() => { window.__holdUnsubscribe = true; });
+await page.locator('.alerts-background').click();
+await page.waitForFunction(() => typeof window.__finishUnsubscribe === 'function');
+await page.locator('.alerts-options input').last().uncheck();
+assert('background disable remains locked after a preference re-render', await page.locator('.alerts-background').isDisabled());
+await page.evaluate(() => {
+  document.querySelector('.alerts-background').click();
+  window.__finishUnsubscribe();
+});
+await page.waitForFunction(() => document.querySelector('.alerts-background').textContent === 'Enable background alerts');
+assert('pending disable cannot be submitted twice', await page.evaluate(() => window.__pushCalls.filter(call => call.type === 'unsubscribe').length === 1));
+assert('disable remains inactive after the pending preference edit', await page.locator('.alerts-background').getAttribute('aria-pressed') === 'false');
 
 await browser.close();
 if (failures.length) {

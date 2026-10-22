@@ -64,6 +64,8 @@ A correction from the upstream provider should create a new transition only when
 
 ## Failure handling
 
+- **Overlapping browser preference changes:** subscription, preference-sync, and removal writes are serialized within each page, with preferences captured when requested. Failed operations do not block later retries. This orders acknowledged writes from that page only; cross-tab updates and server writes that finish after a client timeout still require backend versioning or reconciliation.
+
 - **Upstream unavailable:** send nothing; retry collection later.
 - **Malformed upstream payload:** reject that event and record an observable parse failure.
 - **Expired push subscription:** remove or quarantine it after the provider returns the terminal status defined by Web Push semantics.
