@@ -127,19 +127,18 @@ assert('background opt-in registers favorite-team preferences', pushState.calls.
 assert('background opt-in reflects active state', pushState.text === 'Disable background alerts' && pushState.pressed === 'true', pushState);
 
 // Return to the last acknowledged favorite set while an intermediate sync is
-// pending. Completion must converge to the current favorites, not stale B.
-await page.evaluate(selector => {
-  window.__holdSync = true;
-  localStorage.setItem('sports-gamecast-favorites-v1', JSON.stringify(['nfl:kc']));
-  const score = document.querySelector(selector).querySelector('.sc');
-  score.textContent = score.textContent;
-}, favoriteCardSelector);
+// pending. Use the actual favorite control: pregame score cells are empty, so
+// assigning their existing textContent does not necessarily mutate the board.
+const favoriteToggle = page.locator(favoriteCardSelector + ' .favorite-row-button[data-team-key="nfl:lac"]');
+await page.evaluate(() => { window.__holdSync = true; });
+await favoriteToggle.click();
 await page.waitForFunction(() => typeof window.__finishSync === 'function');
-await page.evaluate(selector => {
-  localStorage.setItem('sports-gamecast-favorites-v1', JSON.stringify(['nfl:lac']));
-  const score = document.querySelector(selector).querySelector('.sc');
-  score.textContent = score.textContent;
-}, favoriteCardSelector);
+assert('intermediate favorite removal is held for synchronization', await page.evaluate(() =>
+  window.__pushCalls.at(-1).type === 'sync' && window.__pushCalls.at(-1).teamKeys.length === 0));
+await favoriteToggle.click();
+assert('favorite control restores the acknowledged audience before pending sync completes', await page.evaluate(() =>
+  localStorage.getItem('sports-gamecast-favorites-v1') === JSON.stringify(['nfl:lac']) &&
+  window.__pushCalls.at(-1).teamKeys.length === 0));
 await page.evaluate(() => window.__finishSync());
 await page.waitForFunction(() => window.__pushCalls.at(-1).type === 'sync' && window.__pushCalls.at(-1).teamKeys.includes('nfl:lac'));
 assert('favorite A to B to A converges after pending B completes', await page.evaluate(() => window.__pushCalls.at(-1).teamKeys.join(',') === 'nfl:lac'));
