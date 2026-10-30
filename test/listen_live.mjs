@@ -1,5 +1,6 @@
 import { chromium } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 
 const scriptPath = fileURLToPath(new URL('../listen-live.js', import.meta.url));
 const failures = [];
@@ -51,6 +52,57 @@ const empty = await page.evaluate(() => {
   return document.getElementById('listenLiveBox').textContent;
 });
 assert('unmapped games fail gracefully', empty.includes('No authorized audio source is mapped'), empty);
+
+// Load the actual Gamecast page with the Listen Live script staged as production does.
+// The scoreboard response is gated to exercise both script-before-selection and
+// script-after-selection ordering without relying on timing or a live provider.
+const gamecast = readFileSync(new URL('../gamecast.html', import.meta.url), 'utf8');
+const summary = readFileSync(new URL('./mock_summary.json', import.meta.url), 'utf8');
+const scoreboard = readFileSync(new URL('./mock_scoreboard.json', import.meta.url), 'utf8');
+const registry = { sources: [{ id: 'radio', name: 'Selected Game Radio', providerUrl: 'https://radio.example/listen', streamUrl: 'https://radio.example/live.mp3', directPlaybackAllowed: true }] };
+const mappings = { games: { '401873285': { sources: ['radio'] } } };
+for (const scenario of [
+  { name: 'auto-selected NHL game', query: '?sport=nhl', delayed: true },
+  { name: 'auto-selected game before audio script loads', query: '?sport=nhl', lateScript: true },
+  { name: 'explicit event', query: '?event=401873285' },
+  { name: 'default NFL event', query: '' }
+]) {
+  const integration = await browser.newPage();
+  const errors = [];
+  integration.on('pageerror', error => errors.push(error.message));
+  let releaseScoreboard, audioRequests = 0;
+  const scoreboardGate = new Promise(resolve => { releaseScoreboard = resolve; });
+  await integration.route('**/*', async route => {
+    const url = new URL(route.request().url());
+    if (url.hostname === 'site.api.espn.com') {
+      if (scenario.delayed && url.pathname.endsWith('/scoreboard')) await scoreboardGate;
+      return route.fulfill({ contentType: 'application/json', body: url.pathname.endsWith('/summary') ? summary : scoreboard });
+    }
+    if (url.hostname !== 'gamecast.example') return route.abort();
+    if (url.pathname.endsWith('/gamecast.html')) return route.fulfill({ contentType: 'text/html', body: gamecast });
+    if (url.pathname.endsWith('/broadcast-registry.json') || url.pathname.endsWith('/broadcasts.json')) {
+      audioRequests += 1;
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify(url.pathname.endsWith('/broadcast-registry.json') ? registry : mappings) });
+    }
+    return route.abort();
+  });
+  await integration.goto('https://gamecast.example/gamecast.html' + scenario.query);
+  if (scenario.lateScript) await integration.waitForFunction(() => document.getElementById('gameUI').getAttribute('data-event-id') === '401873285');
+  await integration.addScriptTag({ path: scriptPath });
+  releaseScoreboard();
+  await integration.locator('#listenLiveBox .listen-source-name').waitFor();
+  assert(scenario.name + ' resolves the selected audio source', await integration.locator('#listenLiveBox').textContent().then(text => text.includes('Selected Game Radio')));
+  assert(scenario.name + ' does not rewrite navigation', new URL(integration.url()).search === scenario.query);
+  const samePlayer = await integration.evaluate(async () => {
+    const audio = document.querySelector('#listenLiveBox audio');
+    window.dispatchEvent(new Event('gamecast:event-selected'));
+    await window.GamecastListenLive.mount();
+    return audio === document.querySelector('#listenLiveBox audio');
+  });
+  assert(scenario.name + ' preserves player on repeated mount', samePlayer && audioRequests === 2, audioRequests);
+  assert(scenario.name + ' has no JavaScript errors', errors.length === 0, errors);
+  await integration.close();
+}
 
 await browser.close();
 if (failures.length) process.exit(1);

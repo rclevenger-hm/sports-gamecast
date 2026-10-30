@@ -337,6 +337,12 @@
     if (qs.get("theme") === "director") p.set("theme", "director");
     var ml = document.getElementById("miniLink");
     if (ml) ml.href = "gamebar.html?" + p.toString();
+    // Publish the resolved game for optional panels, including URL-free auto-selection.
+    var gameUi = document.getElementById("gameUI");
+    if (gameUi && eventId && gameUi.getAttribute("data-event-id") !== String(eventId)) {
+      gameUi.setAttribute("data-event-id", String(eventId));
+      window.dispatchEvent(new Event("gamecast:event-selected"));
+    }
   }
   setMiniLink();
 
