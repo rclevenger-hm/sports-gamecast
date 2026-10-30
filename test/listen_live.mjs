@@ -76,7 +76,7 @@ for (const scenario of [
     const url = new URL(route.request().url());
     if (url.hostname === 'site.api.espn.com') {
       if (scenario.delayed && url.pathname.endsWith('/scoreboard')) await scoreboardGate;
-      return route.fulfill({ contentType: 'application/json', body: url.pathname.endsWith('/summary') ? summary : scoreboard });
+      return route.fulfill({ contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: url.pathname.endsWith('/summary') ? summary : scoreboard });
     }
     if (url.hostname !== 'gamecast.example') return route.abort();
     if (url.pathname.endsWith('/gamecast.html')) return route.fulfill({ contentType: 'text/html', body: gamecast });
