@@ -125,18 +125,26 @@
     return response.json();
   }
 
+  var mountedEventId = null;
+  var mountVersion = 0;
+
   async function mount() {
     var gameUi = document.getElementById("gameUI"), situation = document.getElementById("situationBox");
     if (!gameUi || !situation) return;
-    var eventId = new URLSearchParams(location.search).get("event");
-    if (!eventId) return;
+    var eventId = gameUi.getAttribute("data-event-id") || new URLSearchParams(location.search).get("event");
+    if (!eventId || mountedEventId === eventId) return;
+    mountedEventId = eventId;
+    var version = ++mountVersion;
     var box = document.getElementById("listenLiveBox");
     if (!box) { box = document.createElement("section"); box.id = "listenLiveBox"; situation.insertAdjacentElement("afterend", box); }
     box.className = "listen-live"; box.textContent = "Loading authorized audio sources…";
     try {
       var values = await Promise.all([loadJson("data/broadcast-registry.json"), loadJson("data/broadcasts.json")]);
+      if (version !== mountVersion) return;
       render({ container: box, eventId: eventId, registry: values[0], mappings: values[1] });
     } catch (err) {
+      if (version !== mountVersion) return;
+      mountedEventId = null;
       injectStyles(); box.innerHTML = "";
       var head = make("div", "listen-live-head"); head.appendChild(make("div", "listen-live-title", "Listen Live")); box.appendChild(head);
       box.appendChild(make("div", "listen-live-empty", "Audio source data is temporarily unavailable. Gamecast is unaffected."));
@@ -145,6 +153,7 @@
 
   root.GamecastListenLive = { render: render, resolveSources: resolveSources, mount: mount };
   if (typeof document !== "undefined") {
+    root.addEventListener("gamecast:event-selected", mount);
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mount); else mount();
   }
 })(typeof window !== "undefined" ? window : globalThis);
