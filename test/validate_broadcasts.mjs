@@ -27,13 +27,13 @@ export function validateBroadcastData(registry, mappings, { now = Date.now() } =
   const allowedSports = new Set(["nfl", "mlb", "nhl", "mls", "epl"]);
   const allowedScopes = new Set(["home", "away", "national", "neutral"]);
   const allowedAccess = new Set(["free", "subscription", "geo-restricted", "unknown"]);
-  const sourceIds = new Set();
+  const sourcesById = new Map();
 
   for (const source of registry.sources) {
     assert(source && typeof source === "object" && !Array.isArray(source), "each broadcast source must be an object");
     assert(typeof source.id === "string" && source.id.trim(), "each broadcast source requires a non-empty id");
-    assert(!sourceIds.has(source.id), `duplicate broadcast source id: ${source.id}`);
-    sourceIds.add(source.id);
+    assert(!sourcesById.has(source.id), `duplicate broadcast source id: ${source.id}`);
+    sourcesById.set(source.id, source);
     assert(allowedSports.has(source.sport), `unsupported sport for ${source.id}`);
     assert(allowedScopes.has(source.scope), `unsupported scope for ${source.id}`);
     assert(allowedAccess.has(source.access), `unsupported access type for ${source.id}`);
@@ -55,6 +55,11 @@ export function validateBroadcastData(registry, mappings, { now = Date.now() } =
     if (source.directPlaybackAllowed != null) assert(typeof source.directPlaybackAllowed === "boolean", `source ${source.id} directPlaybackAllowed must be boolean`);
     if (source.allGames != null) assert(typeof source.allGames === "boolean", `source ${source.id} allGames must be boolean`);
     if (source.allGames === true) assert(!source.team && (source.scope === "national" || source.scope === "neutral"), `source ${source.id} allGames is only valid for non-team national/neutral sources`);
+    if (source.eventId != null) {
+      assert(typeof source.eventId === "string" && /^[0-9]+$/.test(source.eventId), `source ${source.id} eventId must be a numeric string`);
+      assert(!source.team && source.allGames !== true && (source.scope === "national" || source.scope === "neutral"), `source ${source.id} eventId is only valid for non-team national/neutral sources without allGames`);
+      assert(source.providerUrl, `source ${source.id} with an eventId requires providerUrl`);
+    }
     if (source.streamUrl) {
       assert(source.providerUrl, `source ${source.id} with a direct stream requires providerUrl`);
       assert(source.directPlaybackAllowed === true, `source ${source.id} direct stream requires directPlaybackAllowed=true`);
@@ -66,8 +71,13 @@ export function validateBroadcastData(registry, mappings, { now = Date.now() } =
     const refs = Array.isArray(game.sources) ? game.sources : [];
     for (const ref of refs) {
       const sourceId = typeof ref === "string" ? ref : ref?.id;
-      assert(typeof sourceId === "string" && sourceIds.has(sourceId), `game ${gameId} references unknown source id: ${sourceId}`);
+      const source = sourcesById.get(sourceId);
+      assert(source, `game ${gameId} references unknown source id: ${sourceId}`);
       if (typeof ref === "object") assert(allowedScopes.has(ref.scope), `game ${gameId} source ${sourceId} has unsupported effective scope`);
+      if (source.eventId != null) {
+        const scope = typeof ref === "string" ? source.scope : ref.scope;
+        assert(game.sport === source.sport && gameId === source.eventId && scope === source.scope, `game ${gameId} source ${sourceId} must match the event source sport, eventId and scope`);
+      }
     }
   }
 

@@ -50,4 +50,41 @@ assert.throws(
   /direct stream requires directPlaybackAllowed=true/,
 );
 
+const eventSource = validSource({ team: undefined, scope: "national", eventId: "401000001" });
+const eventMapping = (gameId, sport = "nfl", scope = "national") => ({
+  schemaVersion: 1,
+  games: { [gameId]: { sport, sources: [{ id: eventSource.id, scope }] } },
+});
+
+assert.deepEqual(
+  validateBroadcastData(registryWith(eventSource), eventMapping(eventSource.eventId), { now }),
+  { sources: 1, games: 1 },
+);
+for (const eventId of ["", " 401000001 ", "other-game", 401000001]) {
+  assert.throws(
+    () => validateBroadcastData(registryWith({ ...eventSource, eventId }), mappings, { now }),
+    /eventId must be a numeric string/,
+  );
+}
+for (const selector of [{ team: "LAC" }, { allGames: true }, { scope: "home" }]) {
+  assert.throws(
+    () => validateBroadcastData(registryWith({ ...eventSource, ...selector }), mappings, { now }),
+    /eventId is only valid for non-team national\/neutral sources without allGames/,
+  );
+}
+assert.throws(
+  () => validateBroadcastData(registryWith({ ...eventSource, providerUrl: null }), mappings, { now }),
+  /with an eventId requires providerUrl/,
+);
+for (const badMapping of [
+  eventMapping("401000002"),
+  eventMapping(eventSource.eventId, "mlb"),
+  eventMapping(eventSource.eventId, "nfl", "home"),
+]) {
+  assert.throws(
+    () => validateBroadcastData(registryWith(eventSource), badMapping, { now }),
+    /must match the event source sport, eventId and scope/,
+  );
+}
+
 console.log("Broadcast metadata contract checks passed.");
