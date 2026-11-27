@@ -21,6 +21,7 @@ Do not add scraped, tokenized, paywall-bypassing, or otherwise unauthorized stre
 - `sport` — `nfl`, `mlb`, `nhl`, `mls`, or `epl`;
 - `team` — team abbreviation for a team-affiliated source; the daily mapper derives whether that team is home or away for each game;
 - `scope` — default/manual scope: `home`, `away`, `national`, or `neutral`;
+- `eventId` — optional scoreboard event ID as a numeric string for a one-game, non-team `national`/`neutral` source; requires a `providerUrl` and cannot be combined with `allGames: true`;
 - `allGames` — optional boolean for a non-team `national`/`neutral` provider that is authorized and available for every game in that sport;
 - `language` — BCP 47 language code such as `en` or `es`;
 - `name` — user-facing station/network/provider name;
@@ -33,7 +34,7 @@ Do not add scraped, tokenized, paywall-bypassing, or otherwise unauthorized stre
 - `verifiedAt` — ISO-8601 timestamp of the last source validation;
 - `notes` — short operational notes that do not expose credentials or tokens.
 
-`allGames` is deliberately opt-in. A national source without it is never automatically attached to every game merely because it is national.
+`allGames` is deliberately opt-in. A national source without it and without an `eventId` is never automatically attached to games merely because it is national. For a one-off authorized provider listing, use `eventId` so the source appears only on the matching sport and game, even when several games start at the same time. Keep geographic or subscription restrictions in the existing access metadata. If the provider publishes a separate airtime, put it in the source notes; it does not replace the game's scheduled kickoff. Remove one-off catalog entries after their event.
 
 ## Generated game mapping
 
@@ -63,6 +64,7 @@ CI validates the registry, generator behavior, and generated mapping before depl
 - direct streams must have an explicit source record and playback permission;
 - access and scope values must use supported enums;
 - `allGames` is only valid for non-team national/neutral sources;
+- a source with `eventId` can only appear on the matching sport and game, with the configured national/neutral scope;
 - generated game mappings may only reference source ids present in the registry;
 - generated effective scopes must be valid;
 - team sources must be labeled home/away from the actual matchup.

@@ -41,6 +41,7 @@ export function mapScoreboard(sport, scoreboard, registry) {
   const sources = Array.isArray(registry?.sources) ? registry.sources.filter(source => source?.sport === sport) : [];
 
   for (const event of scoreboard?.events || []) {
+    const eventId = String(event?.id ?? "");
     const competition = event?.competitions?.[0] || {};
     const competitors = competition.competitors || [];
     const homeComp = competitors.find(c => c.homeAway === "home") || {};
@@ -54,7 +55,10 @@ export function mapScoreboard(sport, scoreboard, registry) {
       let scope = source.scope;
       let applies = false;
 
-      if (sourceTeam) {
+      if (source.eventId != null) {
+        applies = !sourceTeam && source.allGames !== true &&
+          (scope === "national" || scope === "neutral") && source.eventId === eventId;
+      } else if (sourceTeam) {
         if (sourceTeam === home.abbreviation) {
           scope = "home";
           applies = true;
@@ -71,7 +75,7 @@ export function mapScoreboard(sport, scoreboard, registry) {
 
     if (mapped.length) {
       mapped.sort((a, b) => a.scope.localeCompare(b.scope) || a.id.localeCompare(b.id));
-      games[String(event.id)] = {
+      games[eventId] = {
         sport,
         start: event.date || null,
         homeTeam: home.abbreviation || home.name,
